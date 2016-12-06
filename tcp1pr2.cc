@@ -31,9 +31,7 @@ private:
   uint32_t        m_packetSize;
   uint32_t        m_nPackets;
   DataRate        m_dataRate;
-  EventId         m_sendEvent;
-  bool            m_running;
-  uint32_t        m_packetsSent;
+  EventId         m_sendEvent; bool            m_running; uint32_t        m_packetsSent;
 };
 
 MyApp::MyApp ()
