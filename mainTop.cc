@@ -6,146 +6,75 @@
 
 using namespace ns3;
 
-// Copied from sixth.cc 
-class MyApp : public Application
-{
-public:
-  	MyApp (); virtual ~MyApp ();
-
-  	/**
-   	 * Register this type.
-  	 * \return The TypeId.
-   	 */
-  	static TypeId GetTypeId (void);
-  	void Setup (Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate);
-
-private:
-  	virtual void StartApplication (void);
-  	virtual void StopApplication (void);
-
-  	void ScheduleTx (void);
-  	void SendPacket (void);
-
-  	Ptr<Socket>     m_socket;
-  	Address         m_peer;
-  	uint32_t        m_packetSize;
-  	uint32_t        m_nPackets;
- 	 DataRate        m_dataRate;
-  	EventId         m_sendEvent;
-  	bool            m_running;
-  	uint32_t        m_packetsSent;
-};
-
-MyApp::MyApp ()
-  : m_socket (0),
-    m_peer (),
-    m_packetSize (0),
-    m_nPackets (0),
-    m_dataRate (0),
-    m_sendEvent (),
-    m_running (false),
-    m_packetsSent (0)
-{
-}
-
-MyApp::~MyApp ()
-{
-  	m_socket = 0;
-}
-
-/* static */
-TypeId MyApp::GetTypeId (void)
-{
-  static TypeId tid = TypeId ("MyApp")
-    .SetParent<Application> ()
-    .SetGroupName ("Tutorial")
-    .AddConstructor<MyApp> ()
-    ;
-  	return tid;
-}
-
-void
-MyApp::Setup (Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate)
-{
-  	m_socket = socket;
-  	m_peer = address;
- 	m_packetSize = packetSize;
-	m_nPackets = nPackets;
-  	m_dataRate = dataRate;
-}
-
-void
-MyApp::StartApplication (void)
-{
-  	m_running = true;
-  	m_packetsSent = 0;
-  	m_socket->Bind ();
-  	m_socket->Connect (m_peer);
-  	SendPacket ();
-}
-
-void
-MyApp::StopApplication (void)
-{
-  	m_running = false;
-
-  	if (m_sendEvent.IsRunning ())
-    {
-      	Simulator::Cancel (m_sendEvent);
-    }
-
-  	if (m_socket)
-    {
-      	m_socket->Close ();
-    }
-}
-
-void
-MyApp::SendPacket (void)
-{
-  	Ptr<Packet> packet = Create<Packet> (m_packetSize);
-  	m_socket->Send (packet);
-
-  	if (++m_packetsSent < m_nPackets)
-    {
-      	ScheduleTx ();
-    }
-}
-
-void
-MyApp::ScheduleTx (void)
-{
-  	if (m_running)
-    {
-		Time tNext (Seconds (m_packetSize * 8 / static_cast<double> (m_dataRate.GetBitRate ())));
-     	 m_sendEvent = Simulator::Schedule (tNext, &MyApp::SendPacket, this);
-    }
-}
+double cwnd = 0, ssthresh = 0;
+Ptr<OutputStreamWrapper> cwndFile;
+Ptr<OutputStreamWrapper> ssthreshFile;
+Ptr<OutputStreamWrapper> seqFile;
 
 // Modified to only write "newCwnd" values
-static void
-CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
+static void CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 {
-  	NS_LOG_UNCOND (Simulator::Now ().GetSeconds () << "\t" << newCwnd);
-	*stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << newCwnd << std::endl;
-	std::cout << Simulator::Now ().GetSeconds () << "\t" << newCwnd << std::endl;
+	*stream->GetStream()  <<  Simulator::Now ().GetSeconds () << "\t" << newCwnd << std::endl;
+	*ssthreshFile->GetStream() << Simulator::Now().GetSeconds() << "\t" << ssthresh << std::endl;
+	cwnd = newCwnd;
 }
 
-int main (int argc, char *argv[]) {
+	
+static void ssthreshTrace (Ptr<OutputStreamWrapper> stream, uint32_t oldthresh, uint32_t newthresh)
+{
+	*cwndFile->GetStream()  <<  Simulator::Now ().GetSeconds () << "\t" << cwnd << std::endl;
+	*stream->GetStream() << Simulator::Now().GetSeconds() << "\t" << newthresh << std::endl;
+	ssthresh = newthresh;
+}
 
+/*static void seqTrace (Ptr<OutputStreamWrapper> stream, uint32_t oldseq, uint32_t newseq)
+{
+	*stream->GetStream() << Simulator::Now().GetSeconds() << "\t" << newseq << std::endl;
+}*/
+
+static void TraceCwnd ()
+{
+  // Trace changes to the congestion window
+    AsciiTraceHelper ascii;
+    cwndFile = ascii.CreateFileStream ("Cwnd.data");
+    Config::ConnectWithoutContext ("/NodeList/0/$ns3::TcpL4Protocol/SocketList/0/CongestionWindow", MakeBoundCallback (&CwndChange,cwndFile));
+}
+
+static void TraceSSthresh()
+{
+	//trace the ssthresh values
+	AsciiTraceHelper ascii;
+    ssthreshFile = ascii.CreateFileStream ("Thresh.data");
+    Config::ConnectWithoutContext ("/NodeList/0/$ns3::TcpL4Protocol/SocketList/0/SlowStartThreshold", MakeBoundCallback (&ssthreshTrace,ssthreshFile));
+}
+
+/*static void TraceSequence ()
+{
+  // Trace changes to the congestion window
+    AsciiTraceHelper ascii;
+    seqFile = ascii.CreateFileStream ("Sequence.data");
+    Config::ConnectWithoutContext ("/NodeList/0/$ns3::TcpSocketBase/NextTXSequence", MakeBoundCallback (&seqTrace,seqFile));
+}*/
+
+
+int main(int argc, char *argv[])
+{
   	// Ensure Proper Argument Usage
-	if (argc != 3) {
+	if (argc != 1) {
 		printf("%d ERROR: Incorrect number of arguements.", argc);
 		printf(" Please run using the following format...\n");
-		printf("tcpchain <pcap-filename> <congestion-output>\n\n");
+		printf("tcpchain\n\n");
 		exit(1);
     }
     
     // Assign Arguements
-	char *pcapName = argv[1];
-	char *congest = argv[2];
-	
-	NS_LOG_COMPONENT_DEFINE ("TCPChain");
+
+	NS_LOG_COMPONENT_DEFINE ("MainTop");
+
+
+
+	std::cout << "REAL STUFFS" << std::endl;
+	Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TcpNewReno::GetTypeId ()));
 
 	// Create nodes A,B,C,D
   	NodeContainer nodes;
@@ -164,7 +93,7 @@ int main (int argc, char *argv[]) {
 
 	// Initialize Stack
 	InternetStackHelper stack;
-	stack.Install (nodes);
+	stack.InstallAll();
 
 	// Initialize and assign Address
 	NS_LOG_INFO ("CREATE: IP Address");
@@ -191,36 +120,31 @@ int main (int argc, char *argv[]) {
 
     // Create and Assign TCP Sink to node D
     uint16_t sinkPort = 8080;
-    Address sinkAddress (InetSocketAddress (interfaceCD.GetAddress (1), sinkPort));
     PacketSinkHelper packetSinkHelper ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), sinkPort));
     ApplicationContainer sinkApps = packetSinkHelper.Install (nodes.Get (3));
     sinkApps.Start (Seconds (0.0));
     sinkApps.Stop (Seconds (30.0));
 
-	// Create Socket
-    Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (nodes.Get (0), TcpSocketFactory::GetTypeId ());
 
-
-
-    BulkSendHelper source ("ns3::TcpSocketFactory",
-    	InetSocketAddress (interfaceCD.GetAddress (1), sinkPort));
+    
+    BulkSendHelper source ("ns3::TcpSocketFactory",InetSocketAddress (interfaceCD.GetAddress (1), sinkPort));
     // Set the amount of data to send in bytes.  Zero is unlimited.
-    source.SetAttribute ("MaxBytes", UintegerValue (1000000));
+	source.SetAttribute("MaxBytes",UintegerValue(1000000));
     ApplicationContainer sourceApps = source.Install (nodes.Get (0));
     sourceApps.Start (Seconds (0.0));
     sourceApps.Stop (Seconds (30.0));
   
 	// Create Congestion Window Stream
-    AsciiTraceHelper asciiTraceHelper;
-    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream (congest);
-    ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
+	Simulator::Schedule(Seconds(0.00001),&TraceCwnd);
+	Simulator::Schedule(Seconds(0.00001),&TraceSSthresh);
+	//Simulator::Schedule(Seconds(0.00001),&TraceSequence);
   
   	// Set Routing Tables and Pcap File
     Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
-	pointToPoint.EnablePcapAll(pcapName);
+	pointToPoint.EnablePcapAll("pcap");
 
 	// Run actual Program
-    Simulator::Stop (Seconds (20));
+    Simulator::Stop (Seconds (31));
     Simulator::Run ();
     Simulator::Destroy ();
 
