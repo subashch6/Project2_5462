@@ -76,6 +76,7 @@ int main(int argc, char *argv[])
 
 	std::cout << "REAL STUFFS" << std::endl;
 	Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TcpNewReno::GetTypeId ()));
+	Config::SetDefault("ns3::Ipv4GlobalRouting::RespondToInterfaceEvents", BooleanValue(true));
 
 	// Create nodes A,B,C,D
   	NodeContainer nodes, nodes2;
@@ -171,7 +172,7 @@ int main(int argc, char *argv[])
 	Simulator::Schedule(Seconds(0.00001),&TraceSSthresh);
 	Simulator::Schedule (Seconds (2),&Ipv4::SetDown,ipv4b, 2);
 	Simulator::Schedule (Seconds (2),&Ipv4::SetDown,ipv4c, 1);
-	Simulator::Schedule (Seconds (2),&Ipv4GlobalRoutingHelper::RecomputeRoutingTables);
+//	Simulator::Schedule (Seconds (2),&Ipv4GlobalRoutingHelper::RecomputeRoutingTables);
 	//Simulator::Schedule(Seconds(0.00001),&TraceSequence);
 	
 	
